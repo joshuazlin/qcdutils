@@ -33,9 +33,7 @@ Examples:
 ##### imports #############################################################
 
 import urllib
-import urllib2
 import hashlib
-import cPickle
 import os
 import re
 import sys
@@ -45,7 +43,6 @@ import optparse
 import struct
 import mmap
 import glob
-import cStringIO
 import array
 import fcntl
 import logging
@@ -53,6 +50,8 @@ import traceback
 import shelve
 import xml.dom.minidom as dom
 import xml.parsers.expat as expat
+import numpy as np
+import tqdm
 try:
     import termios
     import signal
@@ -73,7 +72,7 @@ def notify(*a):
     """
     just an alies for the print function, in case we need to move to Python 3.x
     """
-    print ' '.join([str(x) for x in a])
+    print(' '.join([str(x) for x in a]))
 
 ##### class Lime #############################################################
 
@@ -104,7 +103,7 @@ class Lime(object):
                 if not header: break
                 magic, null,size, name = struct.unpack('!iiq128s',header)
                 if magic != 1164413355:
-                    raise IOError, "not in lime format"
+                    raise IOError("not in lime format")
                 ### the following line is VERY IMPORTANT
                 # name contains (must contain) the C-style string zero
                 # this is potentially a serious security vulnerability
@@ -132,7 +131,7 @@ class Lime(object):
         >>> name, reader, size = lime.read(records = 0)
         """
         if not self.mode in ('r','rb'):
-            raise RuntimeError, "not suported"
+            raise RuntimeError("not suported")
         (name,position,size) = self.records[record]
         self.file.seek(position)
         return (name, self.file, size)
@@ -152,7 +151,7 @@ class Lime(object):
         data can be a string or a file object
         """
         if not self.mode in ('w','wb'):
-            raise RuntimeError, "not supported"
+            raise RuntimeError("not supported")
         if isinstance(reader,str):
             if size == None:
                 size = len(reader)
@@ -163,7 +162,7 @@ class Lime(object):
         self.file.write(header)
         # read data from reader and write to file
         if hasattr(reader,'read'):
-            for i in xrange(size / chunk):
+            for i in range(size / chunk):
                 data = reader.read(chunk)
                 if len(data) != chunk:
                     raise IOError
@@ -243,7 +242,7 @@ def check_unitarity(items,tolerance = 1.0):
     """
     errors = [x for x in items if x<-tolerance or x>tolerance]
     if errors:
-        raise RuntimeError, "matrix is not unitary"
+        raise RuntimeError("matrix is not unitary")
 
 def reorder(data,order1,order2): # data are complex numbers
     """
@@ -255,8 +254,9 @@ def reorder(data,order1,order2): # data are complex numbers
     n = k/m            # 9*2
     items = [None]*k
     for i in range(k):
-        items[n*order1[i/n]+i%n] = data[i]
-    items = [items[n*order2[i/n]+i%n] for i in range(k)]
+        #print(i//n,i,n)
+        items[int(n*order1[int(i//n)]+i%n)] = data[i]
+    items = [items[int(n*order2[int(i//n)]+i%n)] for i in range(k)]
     return items
 
 assert ''.join(reorder('AABBCCDD',[X,Y,Z,T],[Z,Y,X,T])) == 'CCBBAADD'
@@ -276,8 +276,9 @@ class QCDFormat(object):
         elif self.precision.lower() == 'd':
             n = len(data)/8
         else:
-            raise IOError, "incorrect input precision"
-        items = struct.unpack(self.endianess+str(n)+self.precision,data)
+            raise IOError("incorrect input precision")
+        #print("AAH",self.endianess+str(n)+self.precision,data)
+        items = struct.unpack((self.endianess+str(int(n))+self.precision),data)
         if self.is_gauge:
             items = reorder(items,self.link_order,(T,X,Y,Z))
             check_unitarity(items)
@@ -357,7 +358,7 @@ class GaugeMDP(QCDFormat):
         elif self.site_size == self.base_size*8:
             self.precision = 'd'
         else:
-            raise IOError, "unable to determine input precision"
+            raise IOError("unable to determine input precision")
         self.offset = self.file.tell()
         self.size = (nt,nx,ny,nz)
         return (self.precision,nt,nx,ny,nz)
@@ -380,17 +381,17 @@ class GaugeMDP(QCDFormat):
         return self.unpack(data)
     def write_data(self,data,target_precision = None):
         if len(data) != self.base_size:
-            raise RuntimeError, "invalid data size"
+            raise RuntimeError("invalid data size")
         return self.file.write(self.pack(data))
     def convert_from(self,other,target_precision = None):
         (precision,nt,nx,ny,nz) = other.read_header()
         notify('  (precision: %s, size: %ix%ix%ix%i)' % (precision,nt,nx,ny,nz))
         self.write_header(target_precision or precision,nt,nx,ny,nz)
         pbar = ProgressBar(widgets = default_widgets , maxval = self.size[0]).start()
-        for t in xrange(nt):
-            for x in xrange(nx):
-                for y in xrange(ny):
-                    for z in xrange(nz):
+        for t in range(nt):
+            for x in range(nx):
+                for y in range(ny):
+                    for z in range(nz):
                         data = other.read_data(t,x,y,z)
                         self.write_data(data)
             pbar.update(t)
@@ -402,13 +403,13 @@ class GaugeMDPSplit(GaugeMDP):
         (precision,nt,nx,ny,nz) = other.read_header()
         notify('  (precision: %s, size: %ix%ix%ix%i)' % (precision,nt,nx,ny,nz))
         pbar = ProgressBar(widgets = default_widgets , maxval = nt).start()
-        for t in xrange(nt):
+        for t in range(nt):
             slice = GaugeMDP(self.filename.replace('split.mdp',
                                                    't%.4i.mdp' % t))
             slice.write_header(target_precision or precision,1,nx,ny,nz)
-            for x in xrange(nx):
-                for y in xrange(ny):
-                    for z in xrange(nz):
+            for x in range(nx):
+                for y in range(ny):
+                    for z in range(nz):
                         data = other.read_data(t,x,y,z)
                         slice.write_data(data)
             slice.close()
@@ -440,7 +441,7 @@ class PropagatorMDP(QCDFormat):
         elif self.site_size == self.base_size*8:
             self.precision = 'd'
         else:
-            raise IOError, "file not in GaugeMDP format"
+            raise IOError("file not in GaugeMDP format")
         self.offset = self.file.tell()
         self.size = (nt,nx,ny,nz)
         return (self.precision,nt,nx,ny,nz)
@@ -462,17 +463,17 @@ class PropagatorMDP(QCDFormat):
         return self.unpack(data)
     def write_data(self,data,target_precision = None):
         if len(data) != self.base_size:
-            raise RuntimeError, "invalid data size"
+            raise RuntimeError("invalid data size")
         return self.file.write(self.pack(data))
     def convert_from(self,other,target_precision = None):
         (precision,nt,nx,ny,nz) = other.read_header()
         notify('  (precision: %s, size: %ix%ix%ix%i)' % (precision,nt,nx,ny,nz))
         self.write_header(target_precision or precision,nt,nx,ny,nz)
         pbar = ProgressBar(widgets = default_widgets , maxval = self.size[0]).start()
-        for t in xrange(nt):
-            for x in xrange(nx):
-                for y in xrange(ny):
-                    for z in xrange(nz):
+        for t in range(nt):
+            for x in range(nx):
+                for y in range(ny):
+                    for z in range(nz):
                         data = other.read_data(t,x,y,z)
                         self.write_data(data)
             pbar.update(t)
@@ -503,24 +504,51 @@ class PropagatorMDPSplit(QCDFormat):
         self.offset = self.file.tell()
     def write_data(self,data,target_precision = None):
         if len(data) != self.base_size:
-            raise RuntimeError, "invalid data size"
+            raise RuntimeError("invalid data size")
         return self.file.write(self.pack(data))
     def convert_from(self,other,target_precision = None):
         (precision,nt,nx,ny,nz) = other.read_header()
         notify('  (precision: %s, size: %ix%ix%ix%i)' % (precision,nt,nx,ny,nz))
         pbar = ProgressBar(widgets = default_widgets , maxval = nt).start()
-        for t in xrange(nt):
+        for t in range(nt):
             slice = PropagatorMDP(self.filename.replace('.split.prop.mdp',
                                                         '.t%.4i.prop.mdp' % t))
             slice.write_header(target_precision or precision,1,nx,ny,nz)
-            for x in xrange(nx):
-                for y in xrange(ny):
-                    for z in xrange(nz):
+            for x in range(nx):
+                for y in range(ny):
+                    for z in range(nz):
                         data = other.read_data(t,x,y,z)
                         slice.write_data(data)
             slice.close()
             pbar.update(t)
         pbar.finish()
+
+
+class GaugeNPY(QCDFormat):
+    def __init__(self,filename):
+        self.filename = filename
+    def convert_from(self,other,target_precision = None):
+        (precision,nt,nx,ny,nz) = other.read_header()
+        notify('  (precision: %s, size: %ix%ix%ix%i)' % (precision,nt,nx,ny,nz))
+        U = np.zeros((4,nx,ny,nz,nt,3,3),dtype={'f':np.csingle,'d':np.cdouble}[precision.lower()])
+        for t in tqdm.tqdm(range(nt)):
+            for x in range(nx):
+                for y in range(ny):
+                    for z in range(nz):
+                        data = other.read_data(t,x,y,z)
+                        #Links are [T,X,Y,Z], need to reorder
+                        for mu in range(4):
+                            for a in range(3):
+                                for b in range(3):
+                                    U[[3,0,1,2][mu],x,y,z,t,a,b] = data[mu*18 + a*6 + b*2] + 1j*data[mu*18 + a*6 + b*2 + 1]
+        def dag(U):
+            return np.conj(np.moveaxis(U,-1,-2))
+        total = 0
+        for mu in range(4):
+            for nu in range(mu + 1,4):
+                total += np.average(np.trace(U[mu]@np.roll(U[nu],-1,axis=mu)@dag(np.roll(U[mu],-1,axis=nu))@dag(U[nu]),axis1=-1,axis2=-2))
+        print("PLAQUETTE:",total/(6*3))
+        np.save(self.filename,U)
 
 
 class GaugeILDG(QCDFormat):
@@ -548,7 +576,7 @@ class GaugeILDG(QCDFormat):
                 dxml = Lime.xml_parser(data)
                 field = dxml("field")
                 if field != self.field:
-                    raise IOError, 'not a lime GaugeILDG'
+                    raise IOError('not a lime GaugeILDG')
                 precision = int(dxml("precision"))
                 nt = int(dxml("lt"))
                 nx = int(dxml("lx"))
@@ -561,10 +589,10 @@ class GaugeILDG(QCDFormat):
                     self.precision = 'd'
                     self.site_size = self.base_size*8
                 else:
-                    raise IOError, "unable to determine input precision"
+                    raise IOError("unable to determine input precision")
                 self.size = (nt,nx,ny,nz)
                 return (self.precision,nt,nx,ny,nz)
-        raise IOError, "file is not in lime format"
+        raise IOError("file is not in lime format")
     def write_header(self,precision,nt,nx,ny,nz):
         self.precision = precision
         self.site_size = 4*2*9*(4 if precision == 'f' else 8)
@@ -590,7 +618,7 @@ class GaugeILDG(QCDFormat):
         return self.unpack(data)
     def write_data(self,data,target_precision = None):
         if len(data) != self.base_size:
-            raise RuntimeError, "invalid data size"
+            raise RuntimeError("invalid data size")
         return self.file.write(self.pack(data))
     def convert_from(self,other,target_precision = None):
         (precision,nt,nx,ny,nz) = other.read_header()
@@ -598,10 +626,10 @@ class GaugeILDG(QCDFormat):
         self.write_header(target_precision or precision,nt,nx,ny,nz)
         pbar = ProgressBar(widgets = default_widgets , maxval = self.size[0]).start()
         def reader():
-            for t in xrange(nt):
-                for z in xrange(nz):
-                    for y in xrange(ny):
-                        for x in xrange(nx):
+            for t in range(nt):
+                for z in range(nz):
+                    for y in range(ny):
+                        for x in range(nx):
                             data = other.read_data(t,x,y,z)
                             yield self.pack(data)
                 pbar.update(t)
@@ -647,11 +675,11 @@ class GaugeSCIDAC(QCDFormat):
                     self.precision = 'd'
                     self.site_size = self.base_size*8
                 else:
-                    raise IOError, "unable to determine input precision"
+                    raise IOError("unable to determine input precision")
         if self.size and self.precision:
             (nt,nx,ny,nz) = self.size
             return (self.precision,nt,nx,ny,nz)
-        raise IOError, "file is not in lime format"
+        raise IOError("file is not in lime format")
     def read_data(self,t,x,y,z):
         (nt,nx,ny,nz) = self.size
         i = self.offset + (x+nx*(y+ny*(z+nz*t)))*self.site_size
@@ -692,11 +720,11 @@ class GaugeMILC(QCDFormat):
                 elif self.site_size == self.base_size*8:
                     self.precision = 'd'
                 else:
-                    raise IOError, "file not in GaugeMILC fomat"
+                    raise IOError("file not in GaugeMILC fomat")
                 self.offset = self.file.tell()
                 self.size = (nt,nx,ny,nz)
                 return (self.precision,nt,nx,ny,nz)
-        raise IOError, "file not in MILC format"
+        raise IOError("file not in MILC format")
     def write_header(self,precision,nt,nx,ny,nz):
         self.file = open(self.filename,'wb')
         items = [9]
@@ -717,7 +745,7 @@ class GaugeMILC(QCDFormat):
         return self.unpack(data)
     def write_data(self,data,target_precision = None):
         if len(data) != self.base_size:
-            raise RuntimeError, "invalid data size"
+            raise RuntimeError("invalid data size")
         return self.file.write(self.pack(data))
     def convert_from(self,other,target_precision = None):
         (precision,nt,nx,ny,nz) = other.read_header()
@@ -725,10 +753,10 @@ class GaugeMILC(QCDFormat):
         self.write_header(target_precision or precision,nt,nx,ny,nz)
         pbar = ProgressBar(widgets = default_widgets , maxval = self.size[0]).start()
         def reader():
-            for t in xrange(nt):
-                for z in xrange(nz):
-                    for y in xrange(ny):
-                        for x in xrange(nx):
+            for t in range(nt):
+                for z in range(nz):
+                    for y in range(ny):
+                        for x in range(nx):
                             data = other.read_data(t,x,y,z)
                             yield self.pack(data)
                 pbar.update(t)
@@ -743,16 +771,18 @@ class GaugeNERSC(QCDFormat):
     def read_header(self):
         self.file = open(self.filename,'rb')
         header = self.file.read(100000)
-        self.offset = header.find('END_HEADER\n')+11
+        self.offset = header.find(b'END_HEADER\n')+11
         if self.offset<20:
-            raise IOError, 'not in nersc format'
-        lines = header[:self.offset-1].split('\n')[1:-2]
+            raise IOError('not in nersc format')
+        lines = header[:self.offset-1].decode('utf-8').split('\n')[1:-1]
+        print("joshhuh",lines)
         info = dict([[x.strip() for x in item.split(' = ',1)] for item in lines])
         nx = int(info['DIMENSION_1'])
         ny = int(info['DIMENSION_2'])
         nz = int(info['DIMENSION_3'])
         nt = int(info['DIMENSION_4'])
-        if info['FLOATING_POINT'].endswith('SMALL'):
+        print("Joshprint",info)
+        if info['FLOATING_POINT'].endswith('SMALL') or info['FLOATING_POINT'].endswith('LITTLE'):
             self.endianess = '<'
         else: # assume default big endinan
             self.endianess = '>'
@@ -762,7 +792,7 @@ class GaugeNERSC(QCDFormat):
             self.reunitarize = True
             self.base_size = 4*6*2
         else:
-            raise IOError, "not in a known nersc format"
+            raise IOError("not in a known nersc format")
         if info['FLOATING_POINT'].startswith('IEEE32'):
             self.precision = 'f'
             self.site_size = self.base_size*4
@@ -770,7 +800,7 @@ class GaugeNERSC(QCDFormat):
             self.precision = 'd'
             self.site_size = self.base_size*8
         else:
-            raise IOError, "unable to determine input precision"
+            raise IOError("unable to determine input precision")
         self.size = (nt,nx,ny,nz)
         return (self.precision,nt,nx,ny,nz)
     def read_data(self,t,x,y,z):
@@ -793,6 +823,7 @@ OPTIONS = {
     'prop.ildg':(PropagatorSCIDAC,PropagatorSCIDAC,PropagatorMDP),
     'split.mdp':(GaugeMDPSplit,GaugeMDP,GaugeMILC,GaugeNERSC,GaugeILDG,GaugeSCIDAC),
     'split.prop.mdp':(PropagatorMDPSplit,PropagatorMDP,PropagatorSCIDAC),
+    'npy':(GaugeNPY,GaugeMDP,GaugeMILC,GaugeNERSC,GaugeILDG,GaugeSCIDAC)
     }
 
 ALL = (GaugeMDP,GaugeMILC,GaugeNERSC,GaugeILDG,GaugeSCIDAC,PropagatorMDP,PropagatorSCIDAC)
@@ -825,7 +856,7 @@ def universal_converter(path,target,precision,convert=True):
                     notify('%s ... %s %s' % (filename,formatter.__name__,info))
                 processed.add(filename)
                 break
-            except Exception, e:
+            except Exception as e:
                 if convert:
                     messages.append('unable to convert:\n' + traceback.format_exc())
         if not filename in processed:
@@ -1020,7 +1051,7 @@ class ProgressBar(object):
 
     The simple use is like this:
     >>> pbar = ProgressBar().start()
-    >>> for i in xrange(100):
+    >>> for i in range(100):
     ...    # do something
     ...    pbar.update(i+1)
     ...
@@ -1121,7 +1152,7 @@ class ProgressBar(object):
 
         It returns self so you can use it like this:
         >>> pbar = ProgressBar().start()
-        >>> for i in xrange(100):
+        >>> for i in range(100):
         ...    # do something
         ...    pbar.update(i+1)
         ...
@@ -1205,7 +1236,7 @@ def get_list(url):
         json = urllib.urlopen(url).read()
         data = eval(json)
         return data
-    except Exception,e:
+    except Exception as e:
         notify('ERROR: %s' % e)
         return None
 
@@ -1273,7 +1304,7 @@ def test_conversions():
         #GaugeMDP('test.zzz.5.mdp').convert_from(GaugeILDG('test.zzz.4.ildg'))
         #assert open('test.zzz.4.mdp','rb').read() == open('test.zzz.5.mdp','rb').read()
         passed = True
-    except Exception, e:
+    except Exception as e:
         notify('tests failed:\n%s' % traceback.format_exc())
     finally:
         notify('cleaning up tmp files')
@@ -1284,7 +1315,7 @@ def test_conversions():
 
 def main():
     """this is the main program"""
-    print LOGO
+    print(LOGO)
     formats = ','.join(OPTIONS.keys())
     parser = optparse.OptionParser(usage = USAGE)
     parser.add_option("-q", "--quiet",dest = 'quiet',action = 'store_true',
@@ -1321,7 +1352,7 @@ def main():
     try:
         options.source = args[0]
     except IndexError:
-        print USAGE
+        print(USAGE)
         sys.exit(1)
 
     ### download data (http, https, ftp, sftp) or not
@@ -1332,7 +1363,7 @@ def main():
             notify('unable to connect')
             sys.exit(0)
         else:
-            print options.source
+            print(options.source)
             regex = re.compile('.*/(?P<pattern>[^/]*)$')
             pattern = regex.search(options.source).group('pattern')
             target_folder = options.destination or urllib.unquote(pattern)

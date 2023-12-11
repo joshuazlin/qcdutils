@@ -2,11 +2,12 @@
 Forked from https://github.com/mdipierro/qcdutils
 
 Changes 
- - Ported from Python2 to Python3
+ - Partially ported from Python2 to Python3
  - Added 'npy' format, for saving to a numpy array. The shape is [4,LX,LY,LZ,LT,3,3], where the first index is the link direction. 
 
-Only thing tested that works is:
+Things that work:
   >> python3 qcdutils_get.py -c npy filename
-where filename points to a NERSC configuration, in IEEE64LITTLE. Other inputs should work, but code may need to be changed. 
+  >> python3 qcdutils_get.py -c ildg filename
+where filename points to a NERSC configuration, in IEEE64LITTLE. Other input/output types not guarenteed to work (likely will fail due to incomplete porting)
 
 
